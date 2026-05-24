@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sudoku Solver</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #161921;
+    --border:    #2a2f3d;
+    --thick:     #4a9eff;
+    --cell-bg:   #1c2030;
+    --cell-fix:  #141824;
+    --text:      #e8ecf4;
+    --muted:     #5a6278;
+    --accent:    #4a9eff;
+    --accent2:   #ff6b6b;
+    --success:   #4ade80;
+    --glow:      rgba(74,158,255,0.18);
+    --digit-fix: #8eb8ff;
+    --digit-usr: #e8ecf4;
+    --highlight: rgba(74,158,255,0.10);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background-image:
+      radial-gradient(ellipse 60% 40% at 50% -10%, rgba(74,158,255,0.10) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 30% at 80% 100%, rgba(74,100,255,0.07) 0%, transparent 60%);
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  header h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2.4rem, 6vw, 3.8rem);
+    letter-spacing: .18em;
+    color: var(--accent);
+    line-height: 1;
+    text-shadow: 0 0 40px rgba(74,158,255,0.40);
+  }
+  header p {
+    font-family: 'Space Mono', monospace;
+    font-size: .72rem;
+    color: var(--muted);
+    letter-spacing: .25em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 8px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(74,158,255,0.06);
+    max-width: 520px;
+    width: 100%;
+  }
+
+  /* ── Grid ── */
+  .grid-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 22px;
+  }
+
+  .sudoku-grid {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    gap: 0;
+    border: 2.5px solid var(--thick);
+    border-radius: 6px;
+    overflow: hidden;
+    width: min(100%, 414px);
+    aspect-ratio: 1;
+    box-shadow: 0 0 28px rgba(74,158,255,0.14);
+  }
+
+  .cell {
+    background: var(--cell-bg);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(.9rem, 2.5vw, 1.25rem);
+    font-weight: 700;
+    color: var(--digit-usr);
+    cursor: pointer;
+    position: relative;
+    transition: background .12s, color .12s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  /* Thick borders for 3×3 boxes */
+  .cell.right-thick  { border-right:  2px solid var(--thick); }
+  .cell.bottom-thick { border-bottom: 2px solid var(--thick); }
+
+  .cell.fixed {
+    background: var(--cell-fix);
+    color: var(--digit-fix);
+    cursor: default;
+  }
+  .cell.selected { background: var(--highlight); }
+  .cell.error { color: var(--accent2); }
+  .cell.solved { color: var(--success); animation: popIn .25s ease; }
+  .cell.highlight-num { background: rgba(74,158,255,0.06); }
+  .cell.hint-flash { animation: hintFlash .5s ease; }
+
+  @keyframes popIn {
+    0%   { transform: scale(.75); opacity: .4; }
+    60%  { transform: scale(1.08); }
+    100% { transform: scale(1);   opacity: 1; }
+  }
+  @keyframes hintFlash {
+    0%,100% { background: var(--cell-bg); }
+    50%     { background: rgba(74,158,255,0.22); }
+  }
+
+  /* ── Number Pad ── */
+  .numpad {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .numpad-btn {
+    background: var(--cell-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+    height: 44px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, transform .1s;
+  }
+  .numpad-btn:hover  { background: rgba(74,158,255,0.12); border-color: var(--accent); }
+  .numpad-btn:active { transform: scale(.94); }
+  .numpad-btn.erase  { color: var(--accent2); border-color: rgba(255,107,107,.3); }
+  .numpad-btn.erase:hover { background: rgba(255,107,107,0.10); border-color: var(--accent2); }
+
+  /* ── Controls ── */
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn {
+    border: none;
+    border-radius: 8px;
+    padding: 11px 0;
+    font-family: 'Space Mono', monospace;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: opacity .15s, transform .12s, box-shadow .15s;
+  }
+  .btn:active { transform: scale(.97); }
+
+  .btn-solve {
+    background: var(--accent);
+    color: #05090f;
+    box-shadow: 0 0 18px rgba(74,158,255,0.30);
+    grid-column: span 2;
+    font-size: .9rem;
+    padding: 13px 0;
+  }
+  .btn-solve:hover { box-shadow: 0 0 28px rgba(74,158,255,0.50); }
+
+  .btn-clear  { background: rgba(255,107,107,.12); color: var(--accent2); border: 1px solid rgba(255,107,107,.25); }
+  .btn-reset  { background: rgba(90,98,120,.18);  color: var(--muted);   border: 1px solid var(--border); }
+  .btn-hint   { background: rgba(74,222,128,.10); color: var(--success); border: 1px solid rgba(74,222,128,.25); }
+  .btn-random { background: rgba(74,158,255,.10); color: var(--accent);  border: 1px solid rgba(74,158,255,.25); }
+
+  .btn:disabled { opacity: .38; cursor: not-allowed; }
+
+  /* ── Status ── */
+  .status {
+    margin-top: 16px;
+    text-align: center;
+    font-family: 'Space Mono', monospace;
+    font-size: .75rem;
+    letter-spacing: .12em;
+    min-height: 22px;
+    transition: color .3s;
+  }
+  .status.ok     { color: var(--success); }
+  .status.err    { color: var(--accent2); }
+  .status.info   { color: var(--accent);  }
+  .status.muted  { color: var(--muted);   }
+
+  /* ── Solve animation overlay ── */
+  .solving-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), #8b5cf6, var(--accent));
+    background-size: 200% 100%;
+    animation: barMove 1s linear infinite;
+    margin-top: 10px;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .solving-bar.active { opacity: 1; }
+  @keyframes barMove { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SUDOKU</h1>
+  <p>Backtracking Solver · C++ Algorithm</p>
+</header>
+
+<div class="card">
+  <div class="grid-wrap">
+    <div class="sudoku-grid" id="grid"></div>
+  </div>
+
+  <!-- Number Pad -->
+  <div class="numpad" id="numpad"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-solve"   id="btnSolve">⚡ Solve</button>
+    <button class="btn btn-hint"    id="btnHint">💡 Hint</button>
+    <button class="btn btn-random"  id="btnRandom">🎲 New Puzzle</button>
+    <button class="btn btn-clear"   id="btnClear">✕ Clear Input</button>
+    <button class="btn btn-reset"   id="btnReset">↺ Reset</button>
+  </div>
+
+  <div class="solving-bar" id="solvingBar"></div>
+  <div class="status muted" id="status">Select a cell and type a number, or click Solve.</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  BACKTRACKING SOLVER  (mirrors sudoku_solver.cpp logic)
+// ═══════════════════════════════════════════════════════
+const SIZE = 9;
+
+function isValidInRow(grid, row, num) {
+  for (let c = 0; c < SIZE; c++) if (grid[row][c] === num) return false;
+  return true;
+}
+function isValidInCol(grid, col, num) {
+  for (let r = 0; r < SIZE; r++) if (grid[r][col] === num) return false;
+  return true;
+}
+function isValidInBox(grid, row, col, num) {
+  const br = Math.floor(row/3)*3, bc = Math.floor(col/3)*3;
+  for (let r = br; r < br+3; r++)
+    for (let c = bc; c < bc+3; c++)
+      if (grid[r][c] === num) return false;
+  return true;
+}
+function isValid(grid, row, col, num) {
+  return isValidInRow(grid, row, num) &&
+         isValidInCol(grid, col, num) &&
+         isValidInBox(grid, row, col, num);
+}
+
+// Returns solved copy or null
+function solveSudoku(grid) {
+  const g = grid.map(r => [...r]); // deep copy
+  return _solve(g) ? g : null;
+}
+function _solve(g) {
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (g[r][c] === 0) {
+        for (let n = 1; n <= 9; n++) {
+          if (isValid(g, r, c, n)) {
+            g[r][c] = n;
+            if (_solve(g)) return true;
+            g[r][c] = 0;
+          }
+        }
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Validate current board for conflicts (returns set of "r,c" strings)
+function findConflicts(grid) {
+  const bad = new Set();
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const v = grid[r][c];
+      if (!v) continue;
+      grid[r][c] = 0;
+      if (!isValid(grid, r, c, v)) bad.add(`${r},${c}`);
+      grid[r][c] = v;
+    }
+  }
+  return bad;
+}
+
+// ═══════════════════════════════════════════════════════
+//  SAMPLE PUZZLES  (0 = empty)
+// ═══════════════════════════════════════════════════════
+const PUZZLES = [
+  // Classic (easy)
+  [
+    [5,3,0,0,7,0,0,0,0],
+    [6,0,0,1,9,5,0,0,0],
+    [0,9,8,0,0,0,0,6,0],
+    [8,0,0,0,6,0,0,0,3],
+    [4,0,0,8,0,3,0,0,1],
+    [7,0,0,0,2,0,0,0,6],
+    [0,6,0,0,0,0,2,8,0],
+    [0,0,0,4,1,9,0,0,5],
+    [0,0,0,0,8,0,0,7,9]
+  ],
+  // Medium
+  [
+    [0,0,0,2,6,0,7,0,1],
+    [6,8,0,0,7,0,0,9,0],
+    [1,9,0,0,0,4,5,0,0],
+    [8,2,0,1,0,0,0,4,0],
+    [0,0,4,6,0,2,9,0,0],
+    [0,5,0,0,0,3,0,2,8],
+    [0,0,9,3,0,0,0,7,4],
+    [0,4,0,0,5,0,0,3,6],
+    [7,0,3,0,1,8,0,0,0]
+  ],
+  // Hard
+  [
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,3,0,8,5],
+    [0,0,1,0,2,0,0,0,0],
+    [0,0,0,5,0,7,0,0,0],
+    [0,0,4,0,0,0,1,0,0],
+    [0,9,0,0,0,0,0,0,0],
+    [5,0,0,0,0,0,0,7,3],
+    [0,0,2,0,1,0,0,0,0],
+    [0,0,0,0,4,0,0,0,9]
+  ],
+  // Evil
+  [
+    [1,0,0,0,0,7,0,9,0],
+    [0,3,0,0,2,0,0,0,8],
+    [0,0,9,6,0,0,5,0,0],
+    [0,0,5,3,0,0,9,0,0],
+    [0,1,0,0,8,0,0,0,2],
+    [6,0,0,0,0,4,0,0,0],
+    [3,0,0,0,0,0,0,1,0],
+    [0,4,0,0,0,0,0,0,7],
+    [0,0,7,0,0,0,3,0,0]
+  ]
+];
+
+// ═══════════════════════════════════════════════════════
+//  UI STATE
+// ═══════════════════════════════════════════════════════
+let puzzle       = [];  // original clues (0 = empty)
+let board        = [];  // current board (user edits + clues)
+let selectedCell = null;
+let isSolving    = false;
+
+const gridEl     = document.getElementById('grid');
+const statusEl   = document.getElementById('status');
+const barEl      = document.getElementById('solvingBar');
+const btnSolve   = document.getElementById('btnSolve');
+const btnHint    = document.getElementById('btnHint');
+const btnClear   = document.getElementById('btnClear');
+const btnReset   = document.getElementById('btnReset');
+const btnRandom  = document.getElementById('btnRandom');
+
+// ─── Build grid DOM ───────────────────────────────────
+function buildGrid() {
+  gridEl.innerHTML = '';
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.r = r;
+      cell.dataset.c = c;
+      cell.tabIndex = 0;
+      if (c === 2 || c === 5) cell.classList.add('right-thick');
+      if (r === 2 || r === 5) cell.classList.add('bottom-thick');
+      cell.addEventListener('click', () => selectCell(r, c));
+      cell.addEventListener('keydown', onCellKey);
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+function cellEl(r, c) {
+  return gridEl.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+}
+
+// ─── Render board → DOM ──────────────────────────────
+function render(conflicts = new Set()) {
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const el = cellEl(r, c);
+      const v  = board[r][c];
+      const key = `${r},${c}`;
+
+      el.textContent = v || '';
+      el.classList.remove('fixed','error','solved','selected','highlight-num');
+
+      if (puzzle[r][c]) {
+        el.classList.add('fixed');
+      } else if (conflicts.has(key)) {
+        el.classList.add('error');
+      }
+
+      if (selectedCell && selectedCell[0] === r && selectedCell[1] === c) {
+        el.classList.add('selected');
+      }
+    }
+  }
+  // Highlight same number
+  if (selectedCell) {
+    const sv = board[selectedCell[0]][selectedCell[1]];
+    if (sv) {
+      for (let r = 0; r < SIZE; r++)
+        for (let c = 0; c < SIZE; c++)
+          if (board[r][c] === sv) cellEl(r,c).classList.add('highlight-num');
+    }
+  }
+}
+
+// ─── Load puzzle ─────────────────────────────────────
+function loadPuzzle(p) {
+  puzzle = p.map(r => [...r]);
+  board  = p.map(r => [...r]);
+  selectedCell = null;
+  render();
+  setStatus('Select a cell and type a number, or click Solve.', 'muted');
+}
+
+// ─── Cell selection ──────────────────────────────────
+function selectCell(r, c) {
+  selectedCell = [r, c];
+  render(findConflicts(board));
+}
+
+// ─── Keyboard input ──────────────────────────────────
+function onCellKey(e) {
+  const r = +e.target.dataset.r, c = +e.target.dataset.c;
+  selectCell(r, c);
+  if (e.key >= '1' && e.key <= '9') inputDigit(+e.key);
+  else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') inputDigit(0);
+  else if (e.key === 'ArrowRight') selectCell(r, Math.min(8,c+1));
+  else if (e.key === 'ArrowLeft')  selectCell(r, Math.max(0,c-1));
+  else if (e.key === 'ArrowDown')  selectCell(Math.min(8,r+1), c);
+  else if (e.key === 'ArrowUp')    selectCell(Math.max(0,r-1), c);
+  e.preventDefault();
+}
+
+function inputDigit(n) {
+  if (!selectedCell) return;
+  const [r,c] = selectedCell;
+  if (puzzle[r][c]) return; // fixed cell
+  board[r][c] = n;
+  render(findConflicts(board));
+  checkWin();
+}
+
+// ─── Number pad ──────────────────────────────────────
+function buildNumpad() {
+  const pad = document.getElementById('numpad');
+  pad.innerHTML = '';
+  for (let n = 1; n <= 9; n++) {
+    const b = document.createElement('button');
+    b.className = 'numpad-btn';
+    b.textContent = n;
+    b.onclick = () => inputDigit(n);
+    pad.appendChild(b);
+  }
+  const e = document.createElement('button');
+  e.className = 'numpad-btn erase';
+  e.textContent = '✕';
+  e.onclick = () => inputDigit(0);
+  pad.appendChild(e);
+}
+
+// ─── Status helper ───────────────────────────────────
+function setStatus(msg, type='info') {
+  statusEl.textContent = msg;
+  statusEl.className = `status ${type}`;
+}
+
+// ─── Win check ───────────────────────────────────────
+function checkWin() {
+  const flat = board.flat();
+  if (flat.every(v => v > 0) && findConflicts(board).size === 0) {
+    // Animate all solved cells
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++)
+        if (!puzzle[r][c]) {
+          const el = cellEl(r,c);
+          el.classList.add('solved');
+          setTimeout(() => el.classList.remove('solved'), 600);
+        }
+    setStatus('🎉 Puzzle solved! Well done!', 'ok');
+  }
+}
+
+// ─── Solve button ────────────────────────────────────
+async function handleSolve() {
+  if (isSolving) return;
+  isSolving = true;
+  btnSolve.disabled = true;
+  barEl.classList.add('active');
+  setStatus('Solving…', 'info');
+
+  await new Promise(r => setTimeout(r, 30)); // allow repaint
+
+  const conflicts = findConflicts(board);
+  if (conflicts.size) {
+    setStatus('❌ Fix the conflicts before solving.', 'err');
+    render(conflicts);
+    done(); return;
+  }
+
+  const solution = solveSudoku(board);
+  if (!solution) {
+    setStatus('❌ No solution exists for this puzzle.', 'err');
+    done(); return;
+  }
+
+  // Animate fill
+  const empties = [];
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (!puzzle[r][c]) empties.push([r,c]);
+
+  for (const [r,c] of empties) {
+    board[r][c] = solution[r][c];
+    const el = cellEl(r,c);
+    el.textContent = solution[r][c];
+    el.classList.add('solved');
+    await new Promise(res => setTimeout(res, 18));
+  }
+
+  setStatus('✓ Solved using backtracking algorithm!', 'ok');
+  done();
+
+  function done() {
+    isSolving = false;
+    btnSolve.disabled = false;
+    barEl.classList.remove('active');
+  }
+}
+
+// ─── Hint button ─────────────────────────────────────
+function handleHint() {
+  const solution = solveSudoku(board);
+  if (!solution) { setStatus('❌ No solution exists.', 'err'); return; }
+
+  const empties = [];
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (!board[r][c]) empties.push([r,c]);
+
+  if (!empties.length) { setStatus('Board is already complete!', 'ok'); return; }
+
+  const [r,c] = empties[Math.floor(Math.random() * empties.length)];
+  board[r][c] = solution[r][c];
+  selectedCell = [r,c];
+  render(findConflicts(board));
+  const el = cellEl(r,c);
+  el.classList.add('hint-flash');
+  setTimeout(() => el.classList.remove('hint-flash'), 500);
+  setStatus(`💡 Hint placed at row ${r+1}, col ${c+1}.`, 'info');
+  checkWin();
+}
+
+// ─── Buttons ─────────────────────────────────────────
+btnSolve.addEventListener('click', handleSolve);
+btnHint.addEventListener('click', handleHint);
+btnClear.addEventListener('click', () => {
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (!puzzle[r][c]) board[r][c] = 0;
+  selectedCell = null;
+  render();
+  setStatus('User input cleared.', 'muted');
+});
+btnReset.addEventListener('click', () => { loadPuzzle(puzzle); });
+btnRandom.addEventListener('click', () => {
+  const p = PUZZLES[Math.floor(Math.random() * PUZZLES.length)];
+  loadPuzzle(p);
+});
+
+// ─── Keyboard on body ────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (!selectedCell) return;
+  if (e.key >= '1' && e.key <= '9') { inputDigit(+e.key); e.preventDefault(); }
+  else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') { inputDigit(0); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') { selectCell(selectedCell[0], Math.min(8,selectedCell[1]+1)); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft')  { selectCell(selectedCell[0], Math.max(0,selectedCell[1]-1)); e.preventDefault(); }
+  else if (e.key === 'ArrowDown')  { selectCell(Math.min(8,selectedCell[0]+1), selectedCell[1]); e.preventDefault(); }
+  else if (e.key === 'ArrowUp')    { selectCell(Math.max(0,selectedCell[0]-1), selectedCell[1]); e.preventDefault(); }
+});
+
+// ─── Init ─────────────────────────────────────────────
+buildGrid();
+buildNumpad();
+loadPuzzle(PUZZLES[0]);
+</script>
+</body>
+</html>
